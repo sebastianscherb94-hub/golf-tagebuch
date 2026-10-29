@@ -13,6 +13,14 @@ Eine einfache Golf-App für das iPhone, als Web-App, die offline funktioniert. A
 - **Schläger**: Durchschnittsweite pro Schläger, Vorschlag bei Par-3-Löchern
 - **Zeitmessung**: Dauer der ganzen Runde und jedes Lochs (ein Loch läuft vom Betreten bis „Weiter“), laufende Uhr am Loch
 - **Motivierender Spruch** bei jedem App-Start (und wenn die App länger als 30 Min im Hintergrund war)
+- **GPS (freiwillig)**: Weite vom Abschlag zum Ball messen; Grün-Position merken und danach die Entfernung zum Grün sehen. Ungenaue Messungen (> ±25 m) werden nicht übernommen.
+- **Stableford**: Handicap (HCPI) unter „Mehr“, CR/Slope und Loch-Hcp beim Platz; Spielvorgabe nach WHS, vor der Runde anpassbar
+- **Mitspielerinnen**: bis zu 3, Schläge pro Loch mitschreiben
+- **Strafschläge** pro Loch, **Notiz zur Runde**
+- **Erfolge**: erstes Par/Birdie, Loch-Rekorde, beste/schnellste Runde
+- **Teilen**: Ergebnis per WhatsApp & Co., „App an Freundin schicken“, Anleitung auch für Android
+- **Statistik**: Kennzahlen, Entwicklung pro Platz, bestes Loch / Angstloch, Schlägerweiten
+- **Anzeige**: Schriftgröße in 3 Stufen, Bildschirm bleibt während der Runde an (optional)
 - **Sichern / Wiederherstellen** als Datei (iCloud Drive / Dateien), mit Erinnerung nach 30 Tagen
 
 ## Dateien
