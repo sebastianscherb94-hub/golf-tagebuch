@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="de">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Golf-Tagebuch</title>
+  <meta name="theme-color" content="#1f6b3a">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-title" content="Golf-Tagebuch">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
+  <link rel="apple-touch-icon" href="icons/icon-180.png">
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <main id="app" aria-live="polite"></main>
+
+  <nav id="nav" class="nav" aria-label="Hauptmenü">
+    <button data-a="tab" data-view="home"><span aria-hidden="true">🏠</span>Start</button>
+    <button data-a="tab" data-view="courses"><span aria-hidden="true">⛳</span>Plätze</button>
+    <button data-a="tab" data-view="clubs"><span aria-hidden="true">🏌️</span>Schläger</button>
+    <button data-a="tab" data-view="backup"><span aria-hidden="true">💾</span>Sichern</button>
+  </nav>
+
+  <input type="file" id="restoreFile" accept="application/json,.json" hidden>
+
+  <script src="app.js"></script>
+</body>
+</html>
