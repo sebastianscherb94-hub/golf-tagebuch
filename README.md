@@ -2,6 +2,8 @@
 
 Eine einfache Golf-App für das iPhone, als Web-App, die offline funktioniert. Alle Daten bleiben auf dem Handy.
 
+**Adresse:** https://sebastianscherb94-hub.github.io/golf-tagebuch/
+
 ## Funktionen
 - **Plätze** anlegen: Name, 9 oder 18 Löcher, Par und Länge pro Loch
 - **Runde mitschreiben**: pro Loch Abschlag-Schläger, Weite, Schläge, Putts und Wind (Stärke und Richtung)
