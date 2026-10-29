@@ -824,7 +824,9 @@ const NAV_VIEWS = { home: 'home', summary: 'home', courses: 'courses', courseEdi
 
 function render() {
   document.documentElement.style.setProperty('--fs', state.settings.fontScale);
+  const y = window.scrollY; // Position merken, damit die Seite beim Antippen nicht springt
   app.innerHTML = views[ui.view]();
+  window.scrollTo(0, y);
   const tab = NAV_VIEWS[ui.view];
   document.body.classList.toggle('no-nav', !tab);
   document.querySelectorAll('#nav button').forEach(b => {
@@ -832,7 +834,11 @@ function render() {
     else b.removeAttribute('aria-current');
   });
   const dot = document.querySelector('#dots .current');
-  if (dot) dot.scrollIntoView({ inline: 'center', block: 'nearest' });
+  // Nur die Lochnummern-Reihe seitlich verschieben, nicht die ganze Seite
+  if (dot) {
+    const row = dot.parentElement;
+    row.scrollLeft += dot.getBoundingClientRect().left - row.getBoundingClientRect().left - (row.clientWidth - dot.offsetWidth) / 2;
+  }
   updateWakeLock();
 }
 
