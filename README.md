@@ -11,6 +11,8 @@ Eine einfache Golf-App für das iPhone, als Web-App, die offline funktioniert. A
 - **Tipp pro Loch**: eine Notiz, die dauerhaft beim Loch gespeichert bleibt
 - **Wetter automatisch** zu Beginn der Runde (Open-Meteo, kostenlos, braucht Standort und Internet)
 - **Schläger**: Durchschnittsweite pro Schläger, Vorschlag bei Par-3-Löchern
+- **Zeitmessung**: Dauer der ganzen Runde und jedes Lochs (ein Loch läuft vom Betreten bis „Weiter“), laufende Uhr am Loch
+- **Motivierender Spruch** bei jedem App-Start (und wenn die App länger als 30 Min im Hintergrund war)
 - **Sichern / Wiederherstellen** als Datei (iCloud Drive / Dateien), mit Erinnerung nach 30 Tagen
 
 ## Dateien

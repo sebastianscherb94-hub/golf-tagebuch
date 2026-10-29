@@ -166,7 +166,7 @@ input:focus, textarea:focus { outline: 3px solid var(--green); outline-offset: 1
 
 /* Ergebnistabelle */
 table.score { width: 100%; border-collapse: collapse; font-size: 18px; }
-table.score th, table.score td { padding: 10px 6px; border-bottom: 1px solid var(--line); text-align: center; }
+table.score th, table.score td { padding: 10px 3px; border-bottom: 1px solid var(--line); text-align: center; }
 table.score th { font-size: 15px; color: var(--muted); }
 table.score td:first-child, table.score th:first-child { text-align: left; }
 .total { font-size: 48px; font-weight: 800; color: var(--green-dark); line-height: 1; }
@@ -191,6 +191,31 @@ table.score td:first-child, table.score th:first-child { text-align: left; }
 .nav button span { font-size: 28px; line-height: 1; }
 .nav button[aria-current="page"] { color: var(--green-dark); background: var(--green-light); }
 body.no-nav .nav { display: none; }
+
+.timer { font-size: 18px; color: var(--muted); margin: 0 0 4px; }
+.timer strong { color: var(--ink); }
+
+/* Spruch beim Start */
+.splash {
+  position: fixed; inset: 0; z-index: 50;
+  display: flex; align-items: center; justify-content: center;
+  padding: 24px 16px calc(24px + env(safe-area-inset-bottom));
+  background: rgba(19, 34, 26, .55);
+  animation: fade .25s ease-out;
+}
+.splash-card {
+  width: 100%; max-width: 440px;
+  background: var(--card);
+  border-radius: 24px;
+  padding: 28px 22px 14px;
+  text-align: center;
+  box-shadow: 0 12px 40px rgba(0, 0, 0, .25);
+}
+.splash-icon { font-size: 56px; line-height: 1; margin-bottom: 8px; }
+.splash-greet { font-weight: 700; color: var(--green-dark); margin: 0 0 12px; }
+.splash-quote { font-size: 26px; line-height: 1.3; font-weight: 700; margin: 0 0 24px; }
+@keyframes fade { from { opacity: 0; } to { opacity: 1; } }
+@media (prefers-reduced-motion: reduce) { .splash { animation: none; } }
 
 .toggle { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
 .toggle input { width: 30px; height: 30px; accent-color: var(--green); flex: none; }

@@ -8,12 +8,62 @@ const SKY = { sonne: '☀️ Sonnig', wolken: '⛅ Bewölkt', regen: '🌧️ Re
 const DEFAULT_CLUBS = ['Driver', 'Holz 3', 'Holz 5', 'Hybrid', 'Eisen 5', 'Eisen 6', 'Eisen 7',
   'Eisen 8', 'Eisen 9', 'Pitching Wedge', 'Sand Wedge', 'Putter'];
 const BACKUP_REMINDER_DAYS = 30;
+const QUOTE_AGAIN_AFTER_MIN = 30; // so lange im Hintergrund → beim Zurückkommen neuer Spruch
+
+const QUOTES = [
+  'Jeder Schlag ist eine neue Chance.',
+  'Heute zählt nicht der Score, sondern die Freude am Spiel.',
+  'Locker bleiben – der Ball merkt, wenn du verkrampfst.',
+  'Der beste Schlag ist immer der nächste.',
+  'Geduld ist dein bester Schläger.',
+  'Du spielst nicht gegen den Platz, sondern mit ihm.',
+  'Ein Lächeln verbessert jedes Handicap.',
+  'Kleine Fortschritte sind auch Fortschritte.',
+  'Vertrau deinem Schwung – du hast ihn oft genug geübt.',
+  'Frische Luft, schöne Aussicht, gute Gesellschaft – du hast schon gewonnen.',
+  'Jedes Loch ist ein kleiner Neuanfang.',
+  'Nicht die Weite zählt, sondern die Richtung.',
+  'Heute ist ein wunderbarer Tag für ein Birdie.',
+  'Ruhe im Kopf, Rhythmus im Schwung.',
+  'Auch Profis landen im Bunker – entscheidend ist, wie man wieder rauskommt.',
+  'Spiel dein eigenes Spiel.',
+  'Genieß jeden Schritt zwischen den Schlägen.',
+  'Der Ball weiß nicht, wie alt du bist.',
+  'Mut beim Putten – zu kurz ist nie drin.',
+  'Ein gutes Spiel beginnt mit einem tiefen Atemzug.',
+  'Wer lacht, schwingt lockerer.',
+  'Heute schreibst du ein neues Kapitel in dein Golf-Tagebuch.',
+  'Fehler gehören dazu – sie machen den nächsten guten Schlag noch schöner.',
+  'Schau nach vorn, nicht auf die Scorekarte.',
+  'Golf ist wie das Leben: immer schön im Takt bleiben.',
+  'Du hast das Zeug zu deiner besten Runde.',
+  'Sonne oder Regen – Golf macht immer gute Laune.',
+  'Ein schlechter Schlag ist schnell vergessen, ein guter bleibt im Herzen.',
+  'Atme durch, schau aufs Grün und genieß den Moment.',
+  'Heute wird ein guter Tag – du bist ja auf dem Golfplatz!',
+];
 
 const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c =>
   ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const fmtDate = iso => new Date(iso).toLocaleDateString('de-DE', { day: 'numeric', month: 'long', year: 'numeric' });
 const fmtShort = iso => new Date(iso).toLocaleDateString('de-DE', { day: 'numeric', month: 'numeric', year: '2-digit' });
+
+function fmtDuration(ms) {
+  if (ms == null || ms < 0) return '–';
+  const min = Math.floor(ms / 60000);
+  if (min < 1) return 'unter 1 Min';
+  if (min < 60) return `${min} Min`;
+  return `${Math.floor(min / 60)} Std ${min % 60} Min`;
+}
+
+// Kurzform für die Tabelle: 12′ oder 1:05 h
+function fmtMinutes(ms) {
+  if (ms == null || ms < 0) return '–';
+  const min = Math.floor(ms / 60000);
+  if (min < 60) return `${Math.max(min, 1)}′`;
+  return `${Math.floor(min / 60)}:${String(min % 60).padStart(2, '0')} h`;
+}
 
 function freshState() {
   return {
@@ -133,6 +183,16 @@ function roundTotals(r) {
   return { strokes, par, putts, played };
 }
 
+/* Zeitmessung: Ein Loch läuft vom ersten Betreten bis zum Weitergehen zum nächsten Loch.
+   Zurückblättern zum Korrigieren ändert die Zeiten nicht. */
+const holeDuration = h => (h?.start && h?.end ? h.end - h.start : null);
+const roundDuration = r => (r.finishedAt ? r.finishedAt - Date.parse(r.date) : null);
+
+function holeTimeNow(h) {
+  if (!h?.start) return null;
+  return (h.end || Date.now()) - h.start;
+}
+
 function parText(diff) {
   if (diff === 0) return 'genau Par';
   return diff > 0 ? `${diff} über Par` : `${-diff} unter Par`;
@@ -195,6 +255,7 @@ const views = {
       html += `<div class="card last">
         <h3>Laufende Runde</h3>
         <p>${esc(c?.name)} · Loch ${state.currentHole + 1} von ${r.holes.length}</p>
+        <p class="small muted">⏱ Läuft seit ${fmtDuration(Date.now() - Date.parse(r.date))}</p>
         <button class="btn primary big" data-a="resume">Weiterspielen ▶</button>
         <button class="btn link danger" data-a="discardRound">Runde verwerfen</button>
       </div>`;
@@ -207,7 +268,7 @@ const views = {
         const t = roundTotals(x);
         return `<li><button class="item" data-a="go" data-view="summary" data-id="${x.id}">
           <span><span class="title">${esc(courseName(course(x.courseId)))}</span>
-          <span class="sub">${fmtDate(x.date)}</span></span>
+          <span class="sub">${fmtDate(x.date)}${roundDuration(x) ? ` · ⏱ ${fmtDuration(roundDuration(x))}` : ''}</span></span>
           <span class="score">${t.strokes || '–'}</span></button></li>`;
       }).join('') + `</ul>`;
     } else if (!r) {
@@ -264,13 +325,15 @@ const views = {
     const isLast = i === r.holes.length - 1;
 
     let html = `<div class="topbar">
-        <button class="btn" data-a="pause">‹ Pause</button>
+        <button class="btn" data-a="pause">‹ Startseite</button>
         <span class="muted small">${esc(c.name)}</span>
       </div>
       <div class="holehead">
         <h1>Loch ${i + 1}</h1>
         <span class="meta">Par ${ch.par}${ch.length ? ` · ${ch.length} m` : ''}</span>
       </div>
+      <p class="timer">⏱ <strong id="tHole">${fmtDuration(holeTimeNow(h))}</strong> an diesem Loch ·
+        <strong id="tRound">${fmtDuration(Date.now() - Date.parse(r.date))}</strong> gesamt</p>
       <div class="dots" id="dots">${r.holes.map((x, j) =>
         `<button data-a="holeGo" data-v="${j}" class="${j === i ? 'current' : x.strokes ? 'done' : ''}"
           aria-label="Loch ${j + 1}">${j + 1}</button>`).join('')}</div>`;
@@ -347,7 +410,9 @@ const views = {
         <td>${i + 1}</td><td>${c?.holes[i]?.par ?? '–'}</td>
         <td><strong>${h.strokes || '–'}</strong></td><td>${h.putts ?? '–'}</td>
         <td class="small">${h.club ? esc(clubName(h.club)) : '–'}${h.distance ? `<br>${h.distance} m` : ''}</td>
+        <td class="small">${fmtMinutes(holeDuration(h))}</td>
       </tr>`).join('');
+    const dur = roundDuration(r);
 
     return `<div class="topbar"><button class="btn" data-a="tab" data-view="home">‹ Start</button></div>
       <h1>${esc(courseName(c))}</h1>
@@ -356,9 +421,10 @@ const views = {
         <div class="total">${t.strokes || '–'}</div>
         <p class="muted" style="margin-top:8px">Schläge auf ${t.played} ${t.played === 1 ? 'Loch' : 'Löchern'}</p>
         ${t.played ? `<p><strong>${parText(t.strokes - t.par)}</strong> · ${t.putts} Putts</p>` : ''}
+        ${dur ? `<p>⏱ Gespielt in <strong>${fmtDuration(dur)}</strong></p>` : ''}
       </div>
       <div class="card"><table class="score">
-        <thead><tr><th>Loch</th><th>Par</th><th>Schläge</th><th>Putts</th><th>Abschlag</th></tr></thead>
+        <thead><tr><th>Loch</th><th>Par</th><th>Schläge</th><th>Putts</th><th>Abschlag</th><th>Zeit</th></tr></thead>
         <tbody>${rows}</tbody></table></div>
       <button class="btn link danger" data-a="deleteRound" data-id="${r.id}">Diese Runde löschen</button>`;
   },
@@ -544,6 +610,7 @@ const actions = {
       weather: { sky: draft.sky, windLevel: draft.windLevel, temp: draft.temp, windKmh: draft.windKmh },
       holes: c.holes.map(() => ({ strokes: null, putts: null, club: null, distance: null, windLevel: draft.windLevel, windDir: null })),
     };
+    r.holes[0].start = Date.parse(r.date);
     state.rounds.push(r);
     state.activeRoundId = r.id;
     state.currentHole = 0;
@@ -559,7 +626,15 @@ const actions = {
     save();
     render();
   },
-  holeGo: d => { state.currentHole = Number(d.v); save(); render(); window.scrollTo(0, 0); },
+  holeGo: d => {
+    const r = activeRound(), from = state.currentHole, to = Number(d.v), now = Date.now();
+    if (to > from && !r.holes[from].end) r.holes[from].end = now;
+    if (!r.holes[to].start) r.holes[to].start = now;
+    state.currentHole = to;
+    save();
+    render();
+    window.scrollTo(0, 0);
+  },
   setClub: d => updateHole(h => {
     h.club = h.club === d.v ? null : d.v;
     // Weite schon mal mit dem Durchschnitt vorbelegen
@@ -582,6 +657,10 @@ const actions = {
     const r = activeRound();
     const open = r.holes.filter(h => !h.strokes).length;
     if (open && !confirm(`Bei ${open} ${open === 1 ? 'Loch fehlen' : 'Löchern fehlen'} noch die Schläge. Trotzdem beenden?`)) return;
+    const now = Date.now();
+    const cur = r.holes[state.currentHole];
+    if (cur.start && !cur.end) cur.end = now;
+    r.finishedAt = now;
     state.activeRoundId = null;
     saveNow();
     go('summary', { id: r.id });
@@ -692,7 +771,53 @@ document.addEventListener('input', e => {
   inputs[el.dataset.in](el.value, el.dataset);
   save();
 });
-document.addEventListener('visibilitychange', () => { if (document.hidden) saveNow(); });
+/* ---------- Motivierender Spruch bei jedem Start ---------- */
+
+function greeting() {
+  const h = new Date().getHours();
+  if (h < 11) return 'Guten Morgen!';
+  if (h < 17) return 'Hallo, schön dass du da bist!';
+  return 'Guten Abend!';
+}
+
+function showQuote() {
+  let i;
+  do { i = Math.floor(Math.random() * QUOTES.length); } while (QUOTES.length > 1 && i === state.lastQuote);
+  state.lastQuote = i;
+  save();
+  document.querySelector('.splash')?.remove();
+  document.body.insertAdjacentHTML('beforeend', `
+    <div class="splash" role="dialog" aria-modal="true" aria-label="Spruch des Tages">
+      <div class="splash-card">
+        <div class="splash-icon" aria-hidden="true">⛳</div>
+        <p class="splash-greet">${greeting()}</p>
+        <p class="splash-quote">„${esc(QUOTES[i])}“</p>
+        <button class="btn primary big" data-a="closeSplash">Los geht's</button>
+      </div>
+    </div>`);
+}
+actions.closeSplash = () => document.querySelector('.splash')?.remove();
+
+let hiddenAt = null;
+document.addEventListener('visibilitychange', () => {
+  if (document.hidden) {
+    hiddenAt = Date.now();
+    saveNow();
+  } else {
+    if (hiddenAt && Date.now() - hiddenAt > QUOTE_AGAIN_AFTER_MIN * 60000) showQuote();
+    tick();
+  }
+});
+
+/* Uhr am Loch alle 15 Sekunden auffrischen, ohne die Seite neu zu zeichnen */
+function tick() {
+  const r = activeRound();
+  const tHole = document.getElementById('tHole');
+  if (!r || !tHole) return;
+  tHole.textContent = fmtDuration(holeTimeNow(r.holes[state.currentHole]));
+  document.getElementById('tRound').textContent = fmtDuration(Date.now() - Date.parse(r.date));
+}
+setInterval(tick, 15000);
 
 /* ---------- Start ---------- */
 
@@ -701,6 +826,7 @@ document.addEventListener('visibilitychange', () => { if (document.hidden) saveN
   if (saved) state = { ...freshState(), ...saved };
   if (state.activeRoundId && activeRound()) ui = { view: 'hole', params: {} };
   render();
+  showQuote();
 
   // iOS bitten, die Daten dauerhaft zu behalten
   if (navigator.storage?.persist) navigator.storage.persist().catch(() => {});
