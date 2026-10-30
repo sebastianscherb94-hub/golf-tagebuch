@@ -1,6 +1,6 @@
 // Hält die App offline verfügbar. Nach jeder Änderung an den Dateien die Versionsnummer erhöhen,
 // damit das iPhone die neue Version lädt.
-const CACHE = 'golf-tagebuch-v6';
+const CACHE = 'golf-tagebuch-v7';
 const FILES = [
   './',
   'index.html',

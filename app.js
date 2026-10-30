@@ -172,6 +172,8 @@ function clubName(id) {
 
 const shotText = s => [s.club && clubName(s.club), s.distance && `${s.distance} m`].filter(Boolean).join(' ');
 const filledShots = h => (h?.shots || []).filter(s => s.club || s.distance);
+// Ein Schlag startet dort, wo der Ball nach dem vorherigen Schlag lag
+const shotStart = (h, n) => h.shots[n].from || (n === 0 ? h.ballPos : h.shots[n - 1].to) || null;
 
 function clubStats() {
   const stats = {};
@@ -383,6 +385,22 @@ function stepper(value, action, extra, label) {
     <span class="value"><strong class="stepval">${value ?? '–'}</strong></span>
     <button data-a="${action}" data-v="1" ${extra} aria-label="${label} mehr">+</button>
   </div>`;
+}
+
+function shotGps(h, n) {
+  const start = shotStart(h, n);
+  const busy = gps.busy;
+  return `<details class="gps" ${start || gps.msg.shot || busy === 'shotFrom' || busy === 'shotTo' ? 'open' : ''}>
+    <summary>📍 Mit GPS messen (freiwillig)</summary>
+    <p class="small muted">${start
+      ? 'Der Start ist bekannt. Schlag spielen, zum Ball gehen, dann „Ball liegt hier“ tippen.'
+      : 'Vor dem Schlag „Hier stehe ich“ tippen, zum Ball gehen, dann „Ball liegt hier“.'}</p>
+    <div class="row">
+      <button class="btn" data-a="gpsShotFrom" ${busy ? 'disabled' : ''}>${busy === 'shotFrom' ? 'Messe …' : start ? '✓ Start' : 'Hier stehe ich'}</button>
+      <button class="btn" data-a="gpsShotTo" ${busy || !start ? 'disabled' : ''}>${busy === 'shotTo' ? 'Messe …' : 'Ball liegt hier'}</button>
+    </div>
+    ${gpsMsg('shot')}
+  </details>`;
 }
 
 function gpsMsg(key) {
@@ -700,6 +718,7 @@ const views = {
               value="${s.distance ?? ''}" placeholder="–" aria-label="Weite in Metern"> m</span>
             <button data-a="shotDist" data-v="5" aria-label="5 Meter mehr">+</button>
           </div>
+          ${shotGps(h, n)}
           <button class="btn primary" style="margin-top:12px" data-a="shotDone">Fertig ✓</button>
           <button class="btn link danger" data-a="shotDelete" data-v="${n}">Diesen Schlag löschen</button>
         </div>` : `<button class="shot-row" data-a="shotEdit" data-v="${n}">
@@ -1254,7 +1273,8 @@ async function autoGreenDistance() {
 
 function closeShotEdit(h) {
   ui.params.shotEdit = null;
-  if (h.shots) h.shots = filledShots(h);
+  delete gps.msg.shot;
+  if (h.shots) h.shots = h.shots.filter(s => s.club || s.distance || s.from);
 }
 
 const editedShot = h => h.shots[ui.params.shotEdit];
@@ -1367,8 +1387,9 @@ const actions = {
   shotAdd: () => updateHole(h => {
     (h.shots ||= []).push({ club: null, distance: null });
     ui.params.shotEdit = h.shots.length - 1;
+    delete gps.msg.shot;
   }),
-  shotEdit: d => updateHole(h => { ui.params.shotEdit = Number(d.v); }),
+  shotEdit: d => updateHole(h => { ui.params.shotEdit = Number(d.v); delete gps.msg.shot; }),
   shotClub: d => updateHole(h => {
     const s = editedShot(h);
     s.club = s.club === d.v ? null : d.v;
@@ -1381,7 +1402,7 @@ const actions = {
       : Math.max(0, Math.min(400, s.distance + Number(d.v)));
   }),
   shotDone: () => updateHole(closeShotEdit),
-  shotDelete: d => updateHole(h => { h.shots.splice(Number(d.v), 1); ui.params.shotEdit = null; }),
+  shotDelete: d => updateHole(h => { h.shots.splice(Number(d.v), 1); ui.params.shotEdit = null; delete gps.msg.shot; }),
   setStrokes: d => updateHole(h => {
     const v = Number(d.v);
     h.strokes = h.strokes === v ? null : v;
@@ -1405,8 +1426,24 @@ const actions = {
   gpsBall: () => runGps('ball', 'dist', fix => {
     const h = activeRound().holes[state.currentHole];
     h.distance = Math.min(400, distanceM(h.teePos, fix));
+    h.ballPos = fix;
     return `Gemessen: ${h.distance} m ✓`;
   }),
+  gpsShotFrom: () => {
+    const s = editedShot(activeRound().holes[state.currentHole]);
+    runGps('shotFrom', 'shot', fix => {
+      s.from = fix;
+      return `Start gemerkt ✓ (±${fix.acc} m). Schlag spielen, zum Ball gehen und „Ball liegt hier“ tippen.`;
+    });
+  },
+  gpsShotTo: () => {
+    const h = activeRound().holes[state.currentHole], n = ui.params.shotEdit, s = h.shots[n], start = shotStart(h, n);
+    runGps('shotTo', 'shot', fix => {
+      s.distance = Math.min(400, distanceM(start, fix));
+      s.to = fix;
+      return `Gemessen: ${s.distance} m ✓`;
+    });
+  },
   gpsGreen: () => runGps('green', 'green', fix => {
     const r = activeRound();
     course(r.courseId).holes[state.currentHole].green = fix;
