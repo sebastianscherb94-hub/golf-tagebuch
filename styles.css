@@ -295,3 +295,23 @@ ul.plain li.me { color: var(--green-dark); font-weight: 700; }
 table.score tr.has-details td { border-bottom: none; padding-bottom: 2px; }
 table.score tr.details td { text-align: left; font-size: calc(15px * var(--fs)); color: var(--muted); padding-top: 0; }
 .row .field { margin-bottom: 0; }
+
+/* Weitere Schläge am Loch */
+.shot-row {
+  display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  width: 100%; min-height: var(--tap); text-align: left;
+  background: var(--card); border: 2px solid var(--line); border-radius: 12px;
+  padding: 8px 14px; margin: 0 0 8px;
+}
+.shot-row .arrow { font-size: calc(26px * var(--fs)); color: var(--green); }
+.card.shot-edit { border-color: var(--green); margin-bottom: 8px; }
+
+/* Schläger sortieren */
+.club-row .club-actions { display: flex; align-items: center; gap: 10px; margin-top: 10px; }
+.club-row .club-actions .btn { margin-left: auto; }
+.move {
+  width: var(--tap); height: 52px; border-radius: 12px;
+  border: 2px solid var(--green); background: var(--card); color: var(--green-dark);
+  font-size: calc(20px * var(--fs));
+}
+.move:disabled { opacity: .3; }

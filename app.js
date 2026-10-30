@@ -170,12 +170,17 @@ function clubName(id) {
   return club(id)?.name || 'Unbekannter Schläger';
 }
 
+const shotText = s => [s.club && clubName(s.club), s.distance && `${s.distance} m`].filter(Boolean).join(' ');
+const filledShots = h => (h?.shots || []).filter(s => s.club || s.distance);
+
 function clubStats() {
   const stats = {};
   for (const r of state.rounds) {
     for (const h of r.holes) {
-      if (!h || !h.club || !h.distance) continue;
-      (stats[h.club] ||= []).push(h.distance);
+      if (!h) continue;
+      for (const s of [{ club: h.club, distance: h.distance }, ...(h.shots || [])]) {
+        if (s.club && s.distance) (stats[s.club] ||= []).push(s.distance);
+      }
     }
   }
   const out = {};
@@ -188,7 +193,7 @@ function lastTimeOn(courseId, holeIndex, excludeRoundId) {
   return sortedRounds()
     .filter(r => r.courseId === courseId && r.id !== excludeRoundId)
     .map(r => ({ round: r, hole: r.holes[holeIndex] }))
-    .find(x => x.hole && (x.hole.strokes || x.hole.club || x.hole.distance));
+    .find(x => x.hole && (x.hole.strokes || x.hole.club || x.hole.distance || filledShots(x.hole).length));
 }
 
 /* ---------- Stableford ---------- */
@@ -638,6 +643,7 @@ const views = {
       const lh = last.hole;
       const bits = [];
       if (lh.club) bits.push(`<strong>${esc(clubName(lh.club))}</strong>${lh.distance ? `, ${lh.distance} m weit` : ''}`);
+      if (filledShots(lh).length) bits.push(`Danach: ${esc(filledShots(lh).map(shotText).join(' → '))}`);
       if (lh.strokes) bits.push(`${lh.strokes} Schläge${lh.putts != null ? `, davon ${lh.putts} Putts` : ''}`);
       const w = windText(lh.windLevel, lh.windDir);
       if (w) bits.push(w);
@@ -678,6 +684,29 @@ const views = {
           ${gpsMsg('dist')}
         </details>
       </div>`;
+
+    // Weitere Schläge nach dem Abschlag, jeder mit eigenem Schläger
+    const shots = h.shots || [];
+    const editing = ui.params.shotEdit;
+    html += `<div class="section"><span class="label">Weitere Schläge</span>
+      ${shots.map((s, n) => n === editing ? `<div class="card shot-edit">
+          <h3>${n + 2}. Schlag mit …</h3>
+          <div class="choices c3">${teeClubs.map(k =>
+            `<button class="choice" data-a="shotClub" data-v="${k.id}" aria-pressed="${s.club === k.id}">${esc(k.name)}</button>`).join('')}</div>
+          <span class="label" style="margin-top:12px">Wie weit? <span class="muted small">(freiwillig)</span></span>
+          <div class="stepper">
+            <button data-a="shotDist" data-v="-5" aria-label="5 Meter weniger">−</button>
+            <span class="value"><input type="number" inputmode="numeric" min="0" max="400" data-in="shotDistance"
+              value="${s.distance ?? ''}" placeholder="–" aria-label="Weite in Metern"> m</span>
+            <button data-a="shotDist" data-v="5" aria-label="5 Meter mehr">+</button>
+          </div>
+          <button class="btn primary" style="margin-top:12px" data-a="shotDone">Fertig ✓</button>
+          <button class="btn link danger" data-a="shotDelete" data-v="${n}">Diesen Schlag löschen</button>
+        </div>` : `<button class="shot-row" data-a="shotEdit" data-v="${n}">
+          <span><strong>${n + 2}. Schlag</strong> ${esc(shotText(s)) || '<span class="muted">noch leer</span>'}</span>
+          <span class="arrow">›</span></button>`).join('')}
+      ${editing == null ? `<button class="btn" data-a="shotAdd">+ Nächster Schlag</button>` : ''}
+    </div>`;
 
     // Ergebnis
     html += `<div class="section"><span class="label">Schläge insgesamt
@@ -734,7 +763,7 @@ const views = {
     const stableford = t.points != null;
 
     const rows = r.holes.map((h, i) => {
-      const details = [h.club && clubName(h.club), h.distance && `${h.distance} m`,
+      const details = [[shotText(h), ...filledShots(h).map(shotText)].filter(Boolean).join(' → '),
         h.penalties && `${h.penalties} Strafschl.`].filter(Boolean);
       const pts = stablefordPoints(r, i);
       return `<tr class="${details.length ? 'has-details' : ''}">
@@ -951,14 +980,19 @@ const views = {
     const stats = clubStats();
     return backBtn('more', 'Mehr') + `<h1>Meine Schläger</h1>
       <p class="small muted">Die durchschnittliche Weite rechnet die App aus deinen Runden selbst aus.
-      Nimm den Haken raus bei Schlägern, die nicht in deinem Bag sind.</p>
-      <ul class="list">${state.clubs.map(k => `<li class="card toggle">
-        <span><span class="title" style="font-weight:700">${esc(k.name)}</span><br>
-        <span class="small muted">${stats[k.id] ? `Ø ${stats[k.id].avg} m · ${stats[k.id].count}× gemessen` : 'Noch keine Weite'}</span></span>
-        <span class="row" style="flex:none;align-items:center">
-          <button class="btn link" style="width:auto;margin:0" data-a="renameClub" data-id="${k.id}">Ändern</button>
+      Nimm den Haken raus bei Schlägern, die nicht in deinem Bag sind.
+      Mit ▲ und ▼ legst du die Reihenfolge fest, so erscheinen sie auch beim Spielen.</p>
+      <ul class="list">${state.clubs.map((k, i) => `<li class="card club-row">
+        <div class="toggle">
+          <span><span class="title" style="font-weight:700">${esc(k.name)}</span><br>
+          <span class="small muted">${stats[k.id] ? `Ø ${stats[k.id].avg} m · ${stats[k.id].count}× gemessen` : 'Noch keine Weite'}</span></span>
           <input type="checkbox" data-a="toggleClub" data-id="${k.id}" ${k.active ? 'checked' : ''} aria-label="${esc(k.name)} im Bag">
-        </span></li>`).join('')}</ul>
+        </div>
+        <div class="club-actions">
+          <button class="move" data-a="moveClub" data-id="${k.id}" data-v="-1" ${i === 0 ? 'disabled' : ''} aria-label="${esc(k.name)} nach oben">▲</button>
+          <button class="move" data-a="moveClub" data-id="${k.id}" data-v="1" ${i === state.clubs.length - 1 ? 'disabled' : ''} aria-label="${esc(k.name)} nach unten">▼</button>
+          <button class="btn link" style="width:auto;margin:0" data-a="renameClub" data-id="${k.id}">Ändern</button>
+        </div></li>`).join('')}</ul>
       <button class="btn primary" data-a="addClub">+ Schläger hinzufügen</button>`;
   },
 
@@ -1218,6 +1252,13 @@ async function autoGreenDistance() {
   } catch { /* ohne Berechtigungs-Abfrage einfach per Knopf */ }
 }
 
+function closeShotEdit(h) {
+  ui.params.shotEdit = null;
+  if (h.shots) h.shots = filledShots(h);
+}
+
+const editedShot = h => h.shots[ui.params.shotEdit];
+
 function enterHole(to) {
   const r = activeRound(), from = state.currentHole, now = Date.now();
   if (to > from) {
@@ -1228,6 +1269,7 @@ function enterHole(to) {
   state.currentHole = to;
   gps.msg = {};
   ui.params.editHole = false;
+  closeShotEdit(r.holes[from]);
   save();
   render();
   window.scrollTo(0, 0);
@@ -1322,6 +1364,24 @@ const actions = {
     const base = h.distance ?? (clubStats()[h.club]?.avg || 100);
     h.distance = Math.max(0, Math.min(400, (h.distance == null ? base : base + Number(d.v))));
   }),
+  shotAdd: () => updateHole(h => {
+    (h.shots ||= []).push({ club: null, distance: null });
+    ui.params.shotEdit = h.shots.length - 1;
+  }),
+  shotEdit: d => updateHole(h => { ui.params.shotEdit = Number(d.v); }),
+  shotClub: d => updateHole(h => {
+    const s = editedShot(h);
+    s.club = s.club === d.v ? null : d.v;
+    const avg = clubStats()[s.club]?.avg;
+    if (s.club && !s.distance && avg) s.distance = avg;
+  }),
+  shotDist: d => updateHole(h => {
+    const s = editedShot(h);
+    s.distance = s.distance == null ? (clubStats()[s.club]?.avg || 100)
+      : Math.max(0, Math.min(400, s.distance + Number(d.v)));
+  }),
+  shotDone: () => updateHole(closeShotEdit),
+  shotDelete: d => updateHole(h => { h.shots.splice(Number(d.v), 1); ui.params.shotEdit = null; }),
   setStrokes: d => updateHole(h => {
     const v = Number(d.v);
     h.strokes = h.strokes === v ? null : v;
@@ -1361,6 +1421,7 @@ const actions = {
     const now = Date.now();
     const cur = r.holes[state.currentHole];
     if (cur.start && !cur.end) cur.end = now;
+    closeShotEdit(cur);
     r.finishedAt = now;
     const lastHole = awardHole(r, state.currentHole);
     r.awards = roundAwards(r);
@@ -1406,6 +1467,14 @@ const actions = {
   setFont: d => { state.settings.fontScale = Number(d.v); save(); render(); },
   toggleAwake: (d, el) => { state.settings.keepAwake = el.checked; save(); },
   toggleClub: (d, el) => { club(d.id).active = el.checked; save(); },
+  moveClub: d => {
+    const i = state.clubs.findIndex(k => k.id === d.id), to = i + Number(d.v);
+    if (to < 0 || to >= state.clubs.length) return;
+    const [k] = state.clubs.splice(i, 1);
+    state.clubs.splice(to, 0, k);
+    save();
+    render();
+  },
   renameClub: d => {
     const k = club(d.id);
     const name = prompt('Neuer Name für den Schläger (leer lassen zum Löschen):', k.name);
@@ -1470,6 +1539,7 @@ const parseDecimal = v => { const n = parseFloat(String(v).replace(',', '.')); r
 const parseIntOrNull = (v, min, max) => { const n = parseInt(v, 10); return Number.isFinite(n) ? Math.max(min, Math.min(max, n)) : null; };
 
 const inputs = {
+  shotDistance: v => { editedShot(activeRound().holes[state.currentHole]).distance = parseIntOrNull(v, 0, 400); },
   courseName: v => { course(ui.params.id).name = v; },
   courseCr: v => { course(ui.params.id).cr = parseDecimal(v); },
   courseSlope: v => { course(ui.params.id).slope = parseIntOrNull(v, 55, 155); },
