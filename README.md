@@ -6,6 +6,7 @@ Eine einfache Golf-App für das iPhone, als Web-App, die offline funktioniert. A
 
 ## Funktionen
 - **Plätze** anlegen: Name, 9 oder 18 Löcher, Par und Länge pro Loch
+- **Platz automatisch erkennen**: Bei „Neue Runde starten“ sucht die App über den Standort den Platz in der Nähe (bis 2 km vom Clubhaus). Für Luftenberg, Metzenhof, Kremstal (A+B), Ansfelden, Bad Hall (Herzog Tassilo) und Wels ist die Scorekarte eingebaut – nur noch Abschlag wählen, dann sind Par, Hcp, Längen, CR und Slope drin. Bereits angelegte Plätze lassen sich unter „Platz bearbeiten“ ebenfalls automatisch ausfüllen.
 - **Runde mitschreiben**: pro Loch Abschlag-Schläger, Weite, Schläge, Putts und Wind (Stärke und Richtung)
 - **„Letztes Mal hier“**: zeigt an jedem Loch Schläger, Weite, Schläge und Wind vom letzten Mal
 - **Tipp pro Loch**: eine Notiz, die dauerhaft beim Loch gespeichert bleibt
@@ -25,6 +26,7 @@ Eine einfache Golf-App für das iPhone, als Web-App, die offline funktioniert. A
 
 ## Dateien
 - `index.html`, `styles.css`, `app.js`: die App
+- `platzdaten.js`: eingebaute Scorekarten mit Koordinaten. Neue Plätze nach demselben Muster ergänzen; Unsicherheiten stehen jeweils unter `pruefen`.
 - `sw.js`: Offline-Modus. **Nach jeder Änderung `CACHE` hochzählen** (`golf-tagebuch-v2` …), sonst behält das iPhone die alte Version.
 - `manifest.webmanifest`, `icons/`: App-Name und App-Symbol
 

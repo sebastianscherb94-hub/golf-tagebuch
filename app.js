@@ -301,6 +301,63 @@ function gpsError(err) {
 // Nur für die Anzeige, wird nicht gespeichert
 const gps = { busy: null, msg: {}, toGreen: null };
 
+/* ---------- Platz in der Nähe erkennen (eingebaute Scorekarten aus platzdaten.js) ---------- */
+
+const NEAR_M = 2000; // so nah am Clubhaus gilt man als „auf diesem Platz“
+const DB = typeof PLATZ_DB !== 'undefined' ? PLATZ_DB : [];
+const dbCourse = key => DB.find(d => d.key === key);
+const here = { pos: null }; // letzter Standort, nur im Speicher
+
+// Wo liegt ein eigener Platz? Eingebaute Koordinaten, sonst ein gemerktes Grün
+function coursePos(c) {
+  const d = c.dbKey && dbCourse(c.dbKey);
+  if (d) return { lat: d.lat, lon: d.lon };
+  return c.holes.find(h => h.green)?.green || null;
+}
+
+const fmtKm = m => (m < 1000 ? `${m} m` : `${fmtNum(m / 1000, m < 10000 ? 1 : 0)} km`);
+const byDistance = (a, b) => (a.m ?? Infinity) - (b.m ?? Infinity);
+const distText = x => (x.m != null ? ` · ${fmtKm(x.m)} entfernt` : '');
+
+// Eigene Plätze ({c}) und eingebaute, noch nicht angelegte Plätze ({d}) – jeweils mit Entfernung
+function placesNear(pos) {
+  const taken = new Set(state.courses.map(c => c.dbKey).filter(Boolean));
+  return [
+    ...state.courses.map(c => ({ c, p: coursePos(c) })),
+    ...DB.filter(d => !taken.has(d.key)).map(d => ({ d, p: d })),
+  ].map(x => ({ ...x, m: pos && x.p ? distanceM(pos, x.p) : null }));
+}
+
+function locate(params) {
+  params.loc = 'loading';
+  if (!navigator.geolocation) { params.loc = 'fail'; return; }
+  navigator.geolocation.getCurrentPosition(p => {
+    here.pos = { lat: p.coords.latitude, lon: p.coords.longitude };
+    params.loc = 'ok';
+    if (ui.params === params) render();
+  }, err => {
+    params.loc = err.code === 1 ? 'denied' : 'fail';
+    if (ui.params === params) render();
+  }, { enableHighAccuracy: false, timeout: 12000, maximumAge: 60000 });
+}
+
+// Scorekarte in einen Platz schreiben. Tipps, gemerkte Grüns und Runden bleiben erhalten.
+function applyScorecard(c, d, teeIndex) {
+  const t = d.tees[teeIndex];
+  const before = c.dbKey && dbCourse(c.dbKey)?.tees.find(x => x.name === c.tee);
+  Object.assign(c, { dbKey: d.key, tee: t.name, cr: t.cr, slope: t.slope });
+  if (!c.name.trim()) c.name = d.name;
+  while (c.holes.length < d.par.length) c.holes.push({ par: 4, length: null, note: '' });
+  c.holes.length = d.par.length;
+  c.holes.forEach((h, i) => {
+    h.par = d.par[i];
+    h.si = d.hcp[i];
+    // Selbst eingetragene Längen nur ersetzen, wenn es für diesen Abschlag welche gibt
+    if (t.len) h.length = t.len[i];
+    else if (before?.len) h.length = null;
+  });
+}
+
 /* ---------- Bausteine ---------- */
 
 function choiceButtons(values, current, action, extra = '', cls = 'choice') {
@@ -392,17 +449,81 @@ const views = {
 
   /* --- Runde starten: Platz wählen --- */
   roundCourse() {
+    const p = ui.params;
     let html = backBtn('home', 'Zurück') + `<h1>Wo spielst du heute?</h1>`;
-    if (!state.courses.length) {
-      return html + `<div class="card"><p>Du hast noch keinen Golfplatz angelegt. Das dauert nur eine Minute.</p>
-        <button class="btn primary" data-a="newCourse" data-then="round">Platz anlegen</button></div>`;
+    const list = placesNear(p.loc === 'ok' ? here.pos : null);
+    const near = list.filter(x => x.m != null && x.m <= NEAR_M).sort(byDistance)[0];
+
+    if (p.loc === 'loading') {
+      html += `<div class="status">📍 Suche den Golfplatz in deiner Nähe …</div>`;
+    } else if (near) {
+      html += `<div class="card last"><h3>📍 Du bist hier</h3>
+        <p><strong>${esc(near.c ? courseName(near.c) : near.d.name)}</strong></p>
+        ${near.d ? `<p class="small muted">Die Scorekarte ist schon in der App – du wählst nur noch deinen Abschlag.</p>` : ''}
+        <button class="btn primary big" ${near.c
+          ? `data-a="pickCourse" data-id="${near.c.id}"`
+          : `data-a="importCourse" data-key="${near.d.key}" data-then="round"`}>Hier spielen ▶</button>
+      </div>`;
+    } else if (p.loc === 'ok') {
+      html += `<div class="status fail">In deiner Nähe ist kein bekannter Platz. Wähle ihn unten aus.</div>`;
+    } else if (p.loc === 'denied') {
+      html += `<div class="status fail">Der Standort ist nicht erlaubt, darum kann die App den Platz nicht erkennen.
+        Erlauben: iPhone-Einstellungen → Datenschutz → Ortungsdienste → Safari-Websites.</div>`;
+    } else if (p.loc === 'fail') {
+      html += `<div class="status fail">Standort gerade nicht verfügbar.
+        <button class="btn link" data-a="relocate">📍 Nochmal suchen</button></div>`;
     }
-    html += `<ul class="list">` + state.courses.map(c =>
-      `<li><button class="item" data-a="pickCourse" data-id="${c.id}">
-        <span><span class="title">${esc(courseName(c))}</span><span class="sub">${c.holes.length} Löcher</span></span>
-        <span class="arrow">›</span></button></li>`).join('') + `</ul>
-      <button class="btn" data-a="newCourse" data-then="round">+ Anderen Platz anlegen</button>`;
-    return html;
+
+    const own = list.filter(x => x.c && x !== near).sort(byDistance);
+    const db = list.filter(x => x.d && x !== near).sort(byDistance);
+    if (own.length) {
+      html += `<h2>${near ? 'Andere Plätze' : 'Meine Plätze'}</h2><ul class="list">` + own.map(x =>
+        `<li><button class="item" data-a="pickCourse" data-id="${x.c.id}">
+          <span><span class="title">${esc(courseName(x.c))}</span><span class="sub">${x.c.holes.length} Löcher${distText(x)}</span></span>
+          <span class="arrow">›</span></button></li>`).join('') + `</ul>`;
+    }
+    if (db.length) {
+      html += `<h2>Mit fertiger Scorekarte</h2><ul class="list">` + db.map(x =>
+        `<li><button class="item" data-a="importCourse" data-key="${x.d.key}" data-then="round">
+          <span><span class="title">${esc(x.d.name)}</span><span class="sub">${esc(x.d.ort)}${distText(x)}</span></span>
+          <span class="arrow">›</span></button></li>`).join('') + `</ul>`;
+    }
+    return html + `<button class="btn" data-a="newCourse" data-then="round">+ Anderen Platz selbst anlegen</button>`;
+  },
+
+  /* --- Eingebaute Scorekarte übernehmen: Abschlag wählen --- */
+  courseImport() {
+    const p = ui.params, d = dbCourse(p.key), target = p.targetId && course(p.targetId);
+    if (!d) { ui = { view: 'courses', params: {} }; return views.courses(); }
+    const back = p.then === 'round' ? `<div class="topbar"><button class="btn" data-a="newRound">‹ Zurück</button></div>`
+      : target ? `<div class="topbar"><button class="btn" data-a="editCourse" data-id="${target.id}">‹ Zurück</button></div>`
+      : `<div class="topbar"><button class="btn" data-a="catalog">‹ Zurück</button></div>`;
+    return back + `<h1>${esc(d.name)}</h1>
+      <p class="muted">${esc(d.ort)} · ${d.par.length} Löcher · Par ${sum(d.par)}</p>
+      <div class="section"><span class="label">Von welchem Abschlag spielst du?</span>
+        <ul class="list">${d.tees.map((t, i) => `<li><button class="item" data-a="takeTee" data-v="${i}">
+          <span><span class="title">${esc(t.name)}${target?.tee === t.name ? ' ✓' : ''}</span>
+          <span class="sub">${t.len ? `${fmtNum(sum(t.len), 0)} m · ` : ''}CR ${fmtNum(t.cr)} · Slope ${t.slope}</span></span>
+          <span class="arrow">›</span></button></li>`).join('')}</ul>
+      </div>
+      ${target ? `<p class="small muted">Par, Hcp, Längen, CR und Slope von „${esc(courseName(target))}“ werden ersetzt.
+        Deine Tipps, gemerkten Grüns und Runden bleiben.</p>` : ''}
+      ${d.pruefen ? `<div class="card hint"><p class="small">⚠️ ${esc(d.pruefen)}</p></div>` : ''}
+      <p class="small muted">Aus öffentlichen Scorekarten übernommen. Du kannst danach beim Platz alles ändern.</p>`;
+  },
+
+  /* --- Liste der eingebauten Plätze --- */
+  courseCatalog() {
+    const p = ui.params;
+    const list = placesNear(here.pos).filter(x => x.d).sort(byDistance);
+    let html = backBtn('courses', 'Plätze') + `<h1>Plätze mit fertiger Scorekarte</h1>
+      <p class="small muted">Par, Hcp und Längen sind schon drin – du wählst nur noch deinen Abschlag.</p>`;
+    if (p.loc === 'loading') html += `<div class="status">📍 Standort wird gesucht, um nach Entfernung zu sortieren …</div>`;
+    if (!list.length) return html + `<p class="muted">Alle eingebauten Plätze hast du schon angelegt.</p>`;
+    return html + `<ul class="list">` + list.map(x =>
+      `<li><button class="item" data-a="importCourse" data-key="${x.d.key}">
+        <span><span class="title">${esc(x.d.name)}</span><span class="sub">${esc(x.d.ort)}${distText(x)}</span></span>
+        <span class="arrow">›</span></button></li>`).join('') + `</ul>`;
   },
 
   /* --- Runde starten: Wetter, Mitspielerinnen, Vorgabe --- */
@@ -475,6 +596,30 @@ const views = {
       <div class="dots" id="dots">${r.holes.map((x, j) =>
         `<button data-a="holeGo" data-v="${j}" class="${j === i ? 'current' : x.strokes ? 'done' : ''}"
           aria-label="Loch ${j + 1}">${j + 1}</button>`).join('')}</div>`;
+
+    // Platzdaten falsch? Direkt hier korrigieren – gilt dauerhaft für den Platz, auch rückwirkend für diese Runde
+    const dup = ch.si ? c.holes.findIndex((x, j) => j !== i && x.si === ch.si) : -1;
+    const dupWarn = dup >= 0 ? `<p class="small">⚠️ Hcp ${ch.si} hat auch Loch ${dup + 1}. Bitte dort ebenfalls ausbessern,
+      sonst stimmen die Vorgabeschläge nicht ganz.</p>` : '';
+    if (ui.params.editHole && c.holes[i]) {
+      html += `<div class="card hint">
+        <h3>✏️ Loch ${i + 1} korrigieren</h3>
+        <p class="small muted">Wird beim Platz gespeichert und zählt auch für die Punkte dieser Runde.</p>
+        <div class="choices c3">${choiceButtons([[3, 'Par 3'], [4, 'Par 4'], [5, 'Par 5']], ch.par, 'curPar')}</div>
+        <div class="row" style="margin-top:8px">
+          <label class="field">Länge (m)
+            <input type="number" inputmode="numeric" data-in="curLength" value="${ch.length ?? ''}" placeholder="z. B. 320">
+          </label>
+          <label class="field">Hcp
+            <input type="number" inputmode="numeric" min="1" max="18" data-in="curSi" value="${ch.si ?? ''}" placeholder="1–18">
+          </label>
+        </div>
+        ${dupWarn}
+        <button class="btn primary" data-a="toggleHoleEdit">Fertig ✓</button>
+      </div>`;
+    } else {
+      html += dupWarn + `<button class="btn link" data-a="toggleHoleEdit">✏️ Par, Hcp oder Länge stimmt nicht? Korrigieren</button>`;
+    }
 
     // Entfernung zum Grün
     if (ch.green) {
@@ -642,7 +787,9 @@ const views = {
         <span class="sub">${c.holes.length} Löcher · ${state.rounds.filter(r => r.courseId === c.id).length} Runden${best ? ` · Bestes: ${best}` : ''}</span></span>
         <span class="arrow">›</span></button></li>`;
     }).join('') + `</ul>
-      <button class="btn primary" data-a="newCourse">+ Neuen Platz anlegen</button>`;
+      ${DB.some(d => !state.courses.some(c => c.dbKey === d.key))
+        ? `<button class="btn primary" data-a="catalog">📋 Platz mit fertiger Scorekarte</button>` : ''}
+      <button class="btn" data-a="newCourse">+ Platz selbst anlegen</button>`;
     return html;
   },
 
@@ -653,12 +800,30 @@ const views = {
       ? `<button class="btn primary big" data-a="pickCourse" data-id="${c.id}">Fertig – Runde starten ▶</button>`
       : `<button class="btn primary big" data-a="tab" data-view="courses">Fertig ✓</button>`;
 
+    const d = c.dbKey && dbCourse(c.dbKey);
+    const free = DB.filter(x => !state.courses.some(k => k.dbKey === x.key));
+    const scorecard = d
+      ? `<div class="card last"><h3>📋 Scorekarte: ${esc(d.name)}</h3>
+          <p class="small">Abschlag <strong>${esc(c.tee || '–')}</strong> · Par, Hcp, Längen, CR und Slope sind eingetragen.</p>
+          ${d.pruefen ? `<p class="small muted">⚠️ ${esc(d.pruefen)}</p>` : ''}
+          <button class="btn" data-a="importCourse" data-key="${d.key}" data-target="${c.id}">Anderen Abschlag wählen</button>
+        </div>`
+      : free.length
+      ? `<div class="card hint"><h3>Scorekarte automatisch ausfüllen</h3>
+          <p class="small">Für diese Plätze ist die Scorekarte schon in der App. Antippen, dann den Abschlag wählen –
+          deine Tipps und Runden bleiben.</p>
+          <div class="chips">${free.map(x =>
+            `<button class="chip" data-a="importCourse" data-key="${x.key}" data-target="${c.id}">${esc(x.name)}</button>`).join('')}</div>
+        </div>`
+      : '';
+
     return backBtn('courses', 'Plätze') + `
       <h1>Platz bearbeiten</h1>
       <p class="small muted">Alles wird sofort gespeichert.</p>
       <label class="field">Name des Platzes
         <input type="text" data-in="courseName" value="${esc(c.name)}" placeholder="z. B. GC Sonnenhof" autocomplete="off">
       </label>
+      ${scorecard}
       <div class="section"><span class="label">Wie viele Löcher?</span>
         <div class="choices c2">${choiceButtons([[9, '9 Löcher'], [18, '18 Löcher']], c.holes.length, 'setHoleCount')}</div>
       </div>
@@ -819,7 +984,7 @@ const views = {
 /* ---------- Anzeigen ---------- */
 
 const app = document.getElementById('app');
-const NAV_VIEWS = { home: 'home', summary: 'home', courses: 'courses', courseEdit: 'courses',
+const NAV_VIEWS = { home: 'home', summary: 'home', courses: 'courses', courseEdit: 'courses', courseCatalog: 'courses',
   stats: 'stats', more: 'more', clubs: 'more', backup: 'more' };
 
 function render() {
@@ -1062,6 +1227,7 @@ function enterHole(to) {
   if (!r.holes[to].start) r.holes[to].start = now;
   state.currentHole = to;
   gps.msg = {};
+  ui.params.editHole = false;
   save();
   render();
   window.scrollTo(0, 0);
@@ -1072,7 +1238,24 @@ const actions = {
   tab: d => go(d.view),
   go: d => go(d.view, { id: d.id }),
 
-  newRound: () => go('roundCourse'),
+  newRound: () => { const params = {}; locate(params); go('roundCourse', params); },
+  relocate: () => { locate(ui.params); render(); },
+  toggleHoleEdit: () => { ui.params.editHole = !ui.params.editHole; save(); render(); },
+  curPar: d => { course(activeRound().courseId).holes[state.currentHole].par = Number(d.v); save(); render(); },
+  catalog: () => { const params = {}; locate(params); go('courseCatalog', params); },
+  importCourse: d => go('courseImport', { key: d.key, then: d.then, targetId: d.target }),
+  takeTee: d => {
+    const p = ui.params, db = dbCourse(p.key);
+    let c = p.targetId && course(p.targetId);
+    if (c && c.holes.length !== db.par.length &&
+      !confirm(`Der Platz hat jetzt ${c.holes.length} Löcher, die Scorekarte ${db.par.length}. Trotzdem übernehmen?`)) return;
+    if (!c) { c = { id: uid(), name: '', holes: [] }; state.courses.push(c); }
+    applyScorecard(c, db, Number(d.v));
+    save();
+    if (p.then === 'round') return actions.pickCourse({ id: c.id });
+    go('courseEdit', { id: c.id });
+    toast([`✓ Scorekarte übernommen – Abschlag ${c.tee}`]);
+  },
   pickCourse: d => {
     const c = course(d.id);
     if (!c.name.trim()) c.name = 'Mein Golfplatz';
@@ -1293,6 +1476,8 @@ const inputs = {
   holeLength: (v, d) => { course(ui.params.id).holes[d.i].length = parseIntOrNull(v, 0, 700); },
   holeSi: (v, d) => { course(ui.params.id).holes[d.i].si = parseIntOrNull(v, 1, 18); },
   holeNote: v => { const h = course(activeRound().courseId).holes[state.currentHole]; if (h) h.note = v; },
+  curLength: v => { const h = course(activeRound().courseId).holes[state.currentHole]; if (h) h.length = parseIntOrNull(v, 0, 700); },
+  curSi: v => { const h = course(activeRound().courseId).holes[state.currentHole]; if (h) h.si = parseIntOrNull(v, 1, 18); },
   distance: v => { activeRound().holes[state.currentHole].distance = parseIntOrNull(v, 0, 400); },
   roundNote: (v, d) => { round(d.id).note = v; },
   hcpIndex: v => { const n = parseDecimal(v); state.profile.hcpIndex = n == null ? null : Math.max(-10, Math.min(54, n)); },
