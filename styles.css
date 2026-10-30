@@ -148,7 +148,8 @@ input:focus, textarea:focus { outline: 3px solid var(--green); outline-offset: 1
 
 /* Kopfzeile in der Runde */
 .topbar { display: flex; justify-content: space-between; align-items: center; margin: 0 0 4px; }
-.topbar .btn { width: auto; margin: 0; min-height: 48px; padding: 6px 14px; }
+.topbar .btn { width: auto; margin: 0; min-height: 48px; padding: 6px 14px; flex: none; white-space: nowrap; }
+.topbar > span { min-width: 0; margin-left: 12px; text-align: right; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .holehead { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; flex-wrap: wrap; }
 .holehead h1 { margin: 8px 0 4px; }
 .holehead .meta { font-size: calc(22px * var(--fs)); font-weight: 700; color: var(--green-dark); }
